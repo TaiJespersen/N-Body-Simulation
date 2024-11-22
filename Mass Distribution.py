@@ -12,7 +12,9 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, writers
 
 from scipy import constants
-from numpy import sqrt, linspace, histogram2d, zeros, digitize
+from numpy import sqrt, linspace, histogram2d, zeros, digitize, arctan, pi
+import numpy as np
+from numpy.linalg import eig
 
 plt.rcParams['figure.dpi'] = 300
 
@@ -22,7 +24,7 @@ TIME = 0
 MAX_POINTS = 2  # Maximum points per node before splitting
 MIN_NODE_SIZE = 1  # Minimum size of a node before it stops subdividing
 
-NumPoints = 1000 # Number of generated particles
+NumPoints = 100 # Number of generated particles
 MaxMass = 50    # Maximum particle mass
 MaxVelocity = 0.002    # Maximum particle velocity
 Size = 1000     # size of window
@@ -45,7 +47,14 @@ class Point:
         self.mass = mass          # Mass of the point
         self.force = (0.0, 0.0)   # Initialize force as a tuple (Fx, Fy)
         self.velocity = (velocityI, velocityJ) # Initialize velocity as a tuple (Vx, Vy)
-        self.overlaps = (0.0)
+        self.θ = (np.arctan2(position[1], position[0]))
+        self.startingTheta = (arctan(position[1] / position[0]))
+        self.orbitting = False
+        self.eccentricity = []
+        
+        self.overlaps = (0.0)        
+        self.orbit = []
+        
 
 
 class QuadTreeNode:
@@ -229,13 +238,44 @@ points = [
 for point in points:
     quadtree.insert(point)
 
-        
+def ellipsefit(orbit):
+ # Create the design matrix D
+    D = np.zeros((len(orbit), 6))
+    for i, (x, y) in enumerate(orbit):
+        D[i] = [x**2, x * y, y**2, x, y, 1]
+    
+    # Solve the least squares problem D * m = 0
+    # We need to find the null space of D
+    U, S, Vt = np.linalg.svd(D)
+    m = Vt[-1]
+    
+    # Extract the ellipse parameters from the vector m
+    A, B, C, D, E, F = m
+    
+    # Form the matrix M
+    M = np.array([[A, B / 2, D / 2],
+                  [B / 2, C, E / 2],
+                  [D / 2, E / 2, F]])
+    
+    # Find the eigenvalues and eigenvectors of M to determine the ellipse axes and orientation
+    eigvals, eigvecs = eig(M[:2, :2])  # Only the upper-left 2x2 part matters for the ellipse
+    
+    # Sort eigenvalues (larger eigenvalue is the semi-major axis)
+    eigvals = np.abs(eigvals)  # Eigenvalues should be positive, so take absolute values
+    a = np.sqrt(1 / eigvals[0])  # Semi-major axis (larger eigenvalue)
+    b = np.sqrt(1 / eigvals[1])  # Semi-minor axis (smaller eigenvalue)
+    
+    # Compute the eccentricity of the ellipse
+    eccentricity = np.sqrt(1 - (b**2 / a**2))# Example data points (x, y)
+
+    return eccentricity     
 
     
 
 def timestep():
     
     global quadtree
+    global TIME
     
     quadtree = QuadTree(boundary)
     for point in points:
@@ -258,6 +298,18 @@ def timestep():
             point.position[0] + point.velocity[0] * t,
             point.position[1] + point.velocity[1] * t
         )
+        point.θ = np.arctan2(point.position[1], point.position[0])
+        
+        point.orbit.append(point.position)
+        
+        if point.orbitting == False:
+            if abs(point.θ - point.startingTheta) >= 0.2:
+                point.orbitting = True
+        elif point.orbitting == True:
+            if abs(point.θ - point.startingTheta) < 0.1:
+                point.eccentricity.append([ellipsefit(point.orbit), TIME])
+                point.orbit = []
+                point.orbitting = False
     
     # Reset forces for the next timestep
     for point in points:
@@ -313,5 +365,57 @@ writer = Writer(fps=60, metadata=dict(artist='Me'), bitrate=4000)
 ani.save("filename.mp4", writer=writer)
 
 plt.show()
-    
+
+def Eccentricities():
+    Eccentricities = []
+    Times = []
+    for point in points:  # Loop through each point
+        for e in point.eccentricity:  # Each point has a list of [eccentricity, time]
+            Eccentricities.append(e[0])  # Append eccentricity value
+            Times.append(e[1])  # Append the corresponding time
+    return Eccentricities, Times
+
+#ECCENTRICITY
+plotE, plotT = Eccentricities()
+plt.title
+plt.scatter(plotT, plotE, alpha = 0.5)
+plt.ylim(0, 1.1)
+
+plt.title('Eccentricity vs Time')
+plt.xlabel('Time')
+plt.ylabel('Eccentricity')
+plt.show()
+
+'''
+#COUNTS
+
+def CountPointsOverTime():
+    Times = []
+    for point in points:
+        for e in point.eccentricity:
+            Times.append(e[1])  # Collect the times from eccentricity data
+
+    # Define time bins (you can adjust the number of bins as needed)
+    time_bins = np.linspace(0, totTime, 20)  # Time range: from 0 to totTime, with 20 bins
+
+    # Count the number of points within each time bin
+    counts_per_time_bin = []
+    for i in range(len(time_bins) - 1):
+        count_in_bin = sum(1 for t in Times if time_bins[i] <= t < time_bins[i + 1])
+        counts_per_time_bin.append(count_in_bin)
+
+    return time_bins[:-1], counts_per_time_bin  # Time bins and the corresponding point counts
+
+time_bins, counts_per_time_bin = CountPointsOverTime()
+plt.figure(figsize=(8, 6))
+
+plt.bar(time_bins, counts_per_time_bin, width=np.diff(time_bins), edgecolor="black", alpha=0.7)
+
+plt.title('Number of Points Over Time')
+plt.xlabel('Time')
+plt.ylabel('Number of Points')
+plt.show()
+'''
+
+
     
