@@ -9,23 +9,26 @@ Created on Tue Oct  1 12:10:54 2024
 
 import random
 import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
+from matplotlib.animation import FuncAnimation, writers
 
 from scipy import constants
 from numpy import sqrt, linspace, histogram2d, zeros, digitize
 
+plt.rcParams['figure.dpi'] = 300
+
+TIME = 0
 
 # Constants for quadtree configuration
 MAX_POINTS = 2  # Maximum points per node before splitting
 MIN_NODE_SIZE = 1  # Minimum size of a node before it stops subdividing
 
-NumPoints = 100 # Number of generated particles
+NumPoints = 1000 # Number of generated particles
 MaxMass = 50    # Maximum particle mass
 MaxVelocity = 0.002    # Maximum particle velocity
 Size = 1000     # size of window
 h = 30  # smoothing distance
 
-totTime = 1 * (10 ** 8)
+totTime = 1 * (10 ** 7)
 resolution = 1 * (10 ** 4) # lower time resolution = better
 #Fres = 10 # higher force resolution = better
 Inter = 1
@@ -280,7 +283,13 @@ def update_colors():
 
 
 def update(frame):
+    global TIME
+    TIME += 1
+    
+    if ( (TIME * resolution) // totTime) % .01 == 0:
+        print(f'{(100* TIME * resolution)/totTime}% complete')
     timestep()
+    
     
     x_positions = [p.position[0] for p in points]
     y_positions = [p.position[1] for p in points]
@@ -297,6 +306,11 @@ def update(frame):
 frames=int(totTime / resolution)
     
 ani = FuncAnimation(fig, update, frames, blit = True, interval = Inter)
+
+Writer = writers['ffmpeg']
+writer = Writer(fps=60, metadata=dict(artist='Me'), bitrate=4000)
+
+ani.save("filename.mp4", writer=writer)
 
 plt.show()
     
