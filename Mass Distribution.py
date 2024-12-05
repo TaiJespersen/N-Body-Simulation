@@ -24,17 +24,18 @@ TIME = 0
 MAX_POINTS = 2  # Maximum points per node before splitting
 MIN_NODE_SIZE = 1  # Minimum size of a node before it stops subdividing
 
-NumPoints = 100 # Number of generated particles
-MaxMass = 50    # Maximum particle mass
-MaxVelocity = 0.002    # Maximum particle velocity
+NumPoints = 200 # Number of generated particles
+MaxMass = 50  # Maximum particle mass
+MaxVelocity = 0.0    # Maximum particle velocity
+AngularVelocity = 0.000001    #0.000001
 Size = 1000     # size of window
 h = 30  # smoothing distance
 
-totTime = 1 * (10 ** 7)
+totTime = 5 * (10 ** 6)
 resolution = 1 * (10 ** 4) # lower time resolution = better
 #Fres = 10 # higher force resolution = better
 Inter = 1
-θ = 0.7  #Barnes Hut number - lower = better resolution
+θ = 0.2  #Barnes Hut number - lower = better resolution
 overlap_dist = Size/5    #Max Distance to count particles as overlapping
 
 G = constants.G
@@ -46,7 +47,15 @@ class Point:
         self.position = (position)  # (x, y) position of the point
         self.mass = mass          # Mass of the point
         self.force = (0.0, 0.0)   # Initialize force as a tuple (Fx, Fy)
-        self.velocity = (velocityI, velocityJ) # Initialize velocity as a tuple (Vx, Vy)
+        
+        self.angularVelocity = AngularVelocity
+        
+        #angular velocity
+        self.velocity = (-self.angularVelocity * self.position[1], self.angularVelocity * self.position[0])
+        
+        #regular velocity
+        #self.velocity = (velocityI, velocityJ)
+        
         self.θ = (np.arctan2(position[1], position[0]))
         self.startingTheta = (arctan(position[1] / position[0]))
         self.orbitting = False
@@ -100,6 +109,7 @@ class QuadTreeNode:
             self.points.append(point)
             self.mass += point.mass
             self.update_center_of_mass(point)
+
     
     def contains(self, point):
         """Check if the point is within the node's boundary."""
@@ -110,35 +120,44 @@ class QuadTreeNode:
 
     def update_center_of_mass(self, point):
         """Update the center of mass for this node."""
-        total_mass = self.mass
+        total_mass = self.mass + point.mass  # Update total mass by adding the new point's mass
         if total_mass > 0:  # Avoid division by zero
+            # Update the center of mass based on the new point
             self.center_of_mass = (
-                (self.center_of_mass[0] * (total_mass - point.mass) + point.position[0] * point.mass) / total_mass,
-                (self.center_of_mass[1] * (total_mass - point.mass) + point.position[1] * point.mass) / total_mass
+                (self.center_of_mass[0] * self.mass + point.position[0] * point.mass) / total_mass,
+                (self.center_of_mass[1] * self.mass + point.position[1] * point.mass) / total_mass
             )
+            self.mass = total_mass  # Now set the new total mass for the node
+
 
     def calculate_forces(self, point):           
-            
+        #print("CALC FORCES")
         # If the node is a leaf and contains points, calculate forces directly
-        if self.is_leaf():
+        if self.is_leaf() and len(self.points) > 0:
+            #print(f'LEAF SIZE = {len(self.points)}')
             for other_point in self.points:
                 if other_point != point:  # Avoid self-interaction
                     self.apply_gravity(point, other_point)
+                    #print("APPLYING GRAV1")
         else:
+            #print("IS NOT LEAF")
             # Calculate the distance between the point and the node's center of mass
             x, y = point.position
             x_cm, y_cm = self.center_of_mass
             distance_to_cm = sqrt((x - x_cm)**2 + (y - y_cm)**2)
-    
+            #print(f'Distance to center of mass: {distance_to_cm}, Boundary size: {self.boundary[2]}')
             # Barnes-Hut criterion: if the node is far enough, approximate using the center of mass
             if self.boundary[2] / distance_to_cm < θ:  # θ is the Barnes-Hut threshold
+                #print(f'Distance to center of mass: {distance_to_cm}, Boundary size: {self.boundary[2]}')
                 if self.mass > 0:  # Avoid division by zero if there's no mass in the node
+                    #print("APPLYING GRAV2")
                     self.apply_gravity(point, Point(self.center_of_mass, self.mass))
             else:
                 # Otherwise, recurse into the children nodes for more detailed calculations
                 for child in self.children:
                     if child.points or not child.is_leaf():  # Recurse only into non-empty children
                         child.calculate_forces(point)
+                        print("RECURSE")
                 
 
     def should_check(self, node, point):
@@ -156,7 +175,6 @@ class QuadTreeNode:
 
     def apply_gravity(self, point, other_point):
         """Apply gravitational force between two points."""
-        G = constants.G
         di = other_point.position[0] - point.position[0]
         dj = other_point.position[1] - point.position[1]
         r = sqrt(di**2 + dj**2)
@@ -181,12 +199,16 @@ class QuadTreeNode:
                 if u >= 1:
                     return -1/u
             return (-1/h) * W2(r/h) * (r/h)
+
         F = (G * point.mass * other_point.mass) * g(r)
+        #F = (G * point.mass * other_point.mass) / (r**2)
         Fi = F * di / r  # Force in the x-direction
         Fj = F * dj / r  # Force in the y-direction
 
         # Update the force for the point
         point.force = (point.force[0] + Fi, point.force[1] + Fj)
+        other_point.force = (other_point.force[0] - Fi, other_point.force[1] - Fj)
+
         
 
 class QuadTree:
@@ -221,17 +243,17 @@ class QuadTree:
 
 # Initialize the quadtree
 quadtree_size = Size
-quadtree_center = (500, 500)  # Center of the quadtree
+quadtree_center = (0, 0)  # Center of the quadtree
 boundary = (quadtree_center[0], quadtree_center[1], quadtree_size / 2)  # (x_center, y_center, half_size)
 quadtree = QuadTree(boundary)
 
 
 points = [
     Point(
-        position=(random.random() * Size, random.random() * Size),  # Random position within the range
+        position=( (random.random() * Size) - (0.5 * Size), (random.random() * Size)  - (0.5 * Size) ),  # Random position within the range
         mass = random.random() * MaxMass,
-        velocityI = (random.random() * MaxVelocity) - (0.5 * MaxVelocity),
-        velocityJ = (random.random() * MaxVelocity) - (0.5 * MaxVelocity)
+        velocityI = 0,#(random.random() * MaxVelocity) - (0.5 * MaxVelocity),
+        velocityJ = 0#(random.random() * MaxVelocity) - (0.5 * MaxVelocity)
     ) for _ in range(NumPoints)
 ]
 
@@ -290,6 +312,8 @@ def timestep():
         ax = point.force[0] / point.mass
         ay = point.force[1] / point.mass
         
+        #print(f'point: {id(point)} X: {point.force[1]} Y: {point.force[1]}')
+        
         # Update velocity
         point.velocity = (point.velocity[0] + ax * t, point.velocity[1] + ay * t)
         
@@ -310,7 +334,6 @@ def timestep():
                 point.eccentricity.append([ellipsefit(point.orbit), TIME])
                 point.orbit = []
                 point.orbitting = False
-    
     # Reset forces for the next timestep
     for point in points:
         point.force = (0, 0)
@@ -320,8 +343,8 @@ fig, ax = plt.subplots()
 fig.patch.set_facecolor('silver')
 ax.set_facecolor('silver')
 scatter = ax.scatter([p.position[0] for p in points], [p.position[1] for p in points], alpha = 1, s = [p.mass for p in points])
-ax.set_xlim(-Size, Size * 2)
-ax.set_ylim(-Size, Size * 2)
+ax.set_xlim(-2 * Size, Size * 2)
+ax.set_ylim(-2 * Size, Size * 2)
 
 
 def update_colors():
