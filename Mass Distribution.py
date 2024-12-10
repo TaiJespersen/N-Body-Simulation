@@ -24,19 +24,21 @@ TIME = 0
 MAX_POINTS = 2  # Maximum points per node before splitting
 MIN_NODE_SIZE = 1  # Minimum size of a node before it stops subdividing
 
-NumPoints = 200 # Number of generated particles
-MaxMass = 50  # Maximum particle mass
+NumPoints = 1000 # Number of generated particles
+MaxMass = 50000  # Maximum particle mass
 MaxVelocity = 0.0    # Maximum particle velocity
-AngularVelocity = 0.000001    #0.000001
+AngularVelocity = 0.0000009375
 Size = 1000     # size of window
-h = 30  # smoothing distance
+#h = 10  # smoothing distance
 
-totTime = 5 * (10 ** 6)
+totTime = 33 * (20000000/33)
 resolution = 1 * (10 ** 4) # lower time resolution = better
 #Fres = 10 # higher force resolution = better
-Inter = 1
-θ = 0.2  #Barnes Hut number - lower = better resolution
+Inter = 1 #Animation Inteval
+θ = 0.5  #Barnes Hut number - lower = better resolution
 overlap_dist = Size/5    #Max Distance to count particles as overlapping
+ε=100
+
 
 G = constants.G
 
@@ -44,6 +46,7 @@ t = resolution
 
 class Point:
     def __init__(self, position, mass, velocityI, velocityJ):
+        
         self.position = (position)  # (x, y) position of the point
         self.mass = mass          # Mass of the point
         self.force = (0.0, 0.0)   # Initialize force as a tuple (Fx, Fy)
@@ -57,8 +60,11 @@ class Point:
         #self.velocity = (velocityI, velocityJ)
         
         self.θ = (np.arctan2(position[1], position[0]))
-        self.startingTheta = (arctan(position[1] / position[0]))
-        self.orbitting = False
+
+        self.startingTheta = np.arctan2(position[1],position[0])
+        self.startingTheta += (np.pi)
+        
+        self.orbitting = 0
         self.eccentricity = []
         
         self.overlaps = (0.0)        
@@ -157,7 +163,7 @@ class QuadTreeNode:
                 for child in self.children:
                     if child.points or not child.is_leaf():  # Recurse only into non-empty children
                         child.calculate_forces(point)
-                        print("RECURSE")
+                        #print("RECURSE")
                 
 
     def should_check(self, node, point):
@@ -174,14 +180,13 @@ class QuadTreeNode:
     
 
     def apply_gravity(self, point, other_point):
-        """Apply gravitational force between two points."""
         di = other_point.position[0] - point.position[0]
         dj = other_point.position[1] - point.position[1]
         r = sqrt(di**2 + dj**2)
         
         if r <= overlap_dist:
             point.overlaps += 1
-
+            '''
         def g(r):
             def W2(u):
                 if 0 <= u < 1/2:
@@ -199,15 +204,16 @@ class QuadTreeNode:
                 if u >= 1:
                     return -1/u
             return (-1/h) * W2(r/h) * (r/h)
+        '''
 
-        F = (G * point.mass * other_point.mass) * g(r)
-        #F = (G * point.mass * other_point.mass) / (r**2)
+        #F = (G * point.mass * other_point.mass) * g(r)
+        F = (G * point.mass * other_point.mass) / (r**2 + ε**2)
         Fi = F * di / r  # Force in the x-direction
         Fj = F * dj / r  # Force in the y-direction
 
         # Update the force for the point
         point.force = (point.force[0] + Fi, point.force[1] + Fj)
-        other_point.force = (other_point.force[0] - Fi, other_point.force[1] - Fj)
+        #other_point.force = (other_point.force[0] - Fi, other_point.force[1] - Fj)
 
         
 
@@ -247,49 +253,113 @@ quadtree_center = (0, 0)  # Center of the quadtree
 boundary = (quadtree_center[0], quadtree_center[1], quadtree_size / 2)  # (x_center, y_center, half_size)
 quadtree = QuadTree(boundary)
 
-
 points = [
     Point(
-        position=( (random.random() * Size) - (0.5 * Size), (random.random() * Size)  - (0.5 * Size) ),  # Random position within the range
+        position=( 
+            ( ( Size * sqrt(random_value) ) *np.cos(theta) ), 
+            ( ( Size * sqrt(random_value) ) *np.sin(theta) ) 
+            ),  # Random position within the range
         mass = random.random() * MaxMass,
         velocityI = 0,#(random.random() * MaxVelocity) - (0.5 * MaxVelocity),
         velocityJ = 0#(random.random() * MaxVelocity) - (0.5 * MaxVelocity)
     ) for _ in range(NumPoints)
+    for random_value, theta in [(random.random(), random.random() * 2 * np.pi)]
 ]
 
 for point in points:
     quadtree.insert(point)
 
 def ellipsefit(orbit):
- # Create the design matrix D
-    D = np.zeros((len(orbit), 6))
-    for i, (x, y) in enumerate(orbit):
-        D[i] = [x**2, x * y, y**2, x, y, 1]
+    '''
+    xs = np.array([i[0] for i in orbit])
+    ys = np.array([i[1] for i in orbit])
     
-    # Solve the least squares problem D * m = 0
-    # We need to find the null space of D
-    U, S, Vt = np.linalg.svd(D)
-    m = Vt[-1]
+    fig, axe = plt.subplots()
+    axe.scatter(xs, ys)
+    plt.show()
+    '''
+    '''
+    x = np.array([i[0] for i in orbit])
+    y = np.array([i[1] for i in orbit])
     
-    # Extract the ellipse parameters from the vector m
-    A, B, C, D, E, F = m
+    A = np.stack([x**2, x * y, y**2,x , y]).T
+    b = np.ones_like(x)
+    w = np.linalg.lstsq(A, b)[0].squeeze()
+    
+    A, B, C, D, E = w
     
     # Form the matrix M
-    M = np.array([[A, B / 2, D / 2],
-                  [B / 2, C, E / 2],
-                  [D / 2, E / 2, F]])
+    M = np.array([[A, B / 2], [B / 2, C]])
     
     # Find the eigenvalues and eigenvectors of M to determine the ellipse axes and orientation
-    eigvals, eigvecs = eig(M[:2, :2])  # Only the upper-left 2x2 part matters for the ellipse
-    
+    eigvals, eigvecs = eig(M)  # Only the upper-left 2x2 part matters for the ellipse
+    print(f"EIGVALS {eigvals}")
     # Sort eigenvalues (larger eigenvalue is the semi-major axis)
     eigvals = np.abs(eigvals)  # Eigenvalues should be positive, so take absolute values
+    eigvals = np.sort(eigvals)
+    
+    print(f"EIGVALS2 {eigvals}")
     a = np.sqrt(1 / eigvals[0])  # Semi-major axis (larger eigenvalue)
     b = np.sqrt(1 / eigvals[1])  # Semi-minor axis (smaller eigenvalue)
-    
+    print(f"A {A} B {B}")
     # Compute the eccentricity of the ellipse
     eccentricity = np.sqrt(1 - (b**2 / a**2))# Example data points (x, y)
+    print(f"ECCENTRICITY {eccentricity}")
+    
+    
+    xlin = np.linspace(-1000, 1000, 300)
+    ylin = np.linspace(-1000, 1000, 300)
+    X, Y = np.meshgrid(xlin, ylin)
+    
+    Z = w[0]*X**2 + w[1]*X*Y + w[2]*Y**2 #+ w[3]*X + w[4]*Y
+    
+    
+    fig, axe = plt.subplots(figsize=(8, 6))
+    plt.grid(False, which='both', linestyle='--', color='gray', alpha=0.5)
+    axe.scatter(x, y, label='Particle Orbit', color='firebrick')
+    contour = axe.contour(X, Y, Z, [1])
+    
+    from matplotlib.lines import Line2D
+    
+    # Create custom legend entry for the contour line
+    ellipse_line = Line2D([0], [0], color='purple', lw=2)  # Adjust color/lw as needed
+    axe.legend([ellipse_line, plt.Line2D([], [], marker='o', color='firebrick', label='Particle Orbit')],
+               ['Fitted Ellipse', 'Particle Orbit'], loc='upper right')
+    plt.show()
+    
+    '''    
+    
+    
+    
+    
+    
+    
+    
+    if abs( max(orbit[0]) ) < 100 and abs( max(orbit[1]) ) < 100:
+        return np.nan
+    
+    x = np.array([i[0] for i in orbit])
+    y = np.array([i[1] for i in orbit])
+    
+    A = np.stack([x**2, x * y, y**2,x , y]).T
+    b = np.ones_like(x)
+    w = np.linalg.lstsq(A, b)[0].squeeze()
+    
+    A, B, C, D, E = w
 
+    # Form the matrix M
+    M = np.array([[A, B / 2], [B / 2, C]])
+    
+    # Find the eigenvalues and eigenvectors of M to determine the ellipse axes and orientation
+    eigvals, eigvecs = eig(M)  # Only the upper-left 2x2 part matters for the ellipse
+    # Sort eigenvalues (larger eigenvalue is the semi-major axis)
+    eigvals = np.abs(eigvals)  # Eigenvalues should be positive, so take absolute values
+    eigvals = np.sort(eigvals)
+    
+    a = np.sqrt(1 / eigvals[0])  # Semi-major axis (larger eigenvalue)
+    b = np.sqrt(1 / eigvals[1])  # Semi-minor axis (smaller eigenvalue)
+    # Compute the eccentricity of the ellipse
+    eccentricity = np.sqrt(1 - (b**2 / a**2))# Example data points (x, y)
     return eccentricity     
 
     
@@ -323,17 +393,22 @@ def timestep():
             point.position[1] + point.velocity[1] * t
         )
         point.θ = np.arctan2(point.position[1], point.position[0])
+        point.θ += (np.pi)
         
         point.orbit.append(point.position)
         
-        if point.orbitting == False:
-            if abs(point.θ - point.startingTheta) >= 0.2:
-                point.orbitting = True
-        elif point.orbitting == True:
+        if point.orbitting == 0:
+            if abs(point.θ - point.startingTheta) >= pi:
+                point.orbitting = 1
+            else:
+                pass
+        elif point.orbitting == 1:
             if abs(point.θ - point.startingTheta) < 0.1:
                 point.eccentricity.append([ellipsefit(point.orbit), TIME])
                 point.orbit = []
-                point.orbitting = False
+                point.orbitting = 0
+            else:
+                pass
     # Reset forces for the next timestep
     for point in points:
         point.force = (0, 0)
@@ -342,7 +417,8 @@ def timestep():
 fig, ax = plt.subplots()
 fig.patch.set_facecolor('silver')
 ax.set_facecolor('silver')
-scatter = ax.scatter([p.position[0] for p in points], [p.position[1] for p in points], alpha = 1, s = [p.mass for p in points])
+ax.set_aspect('equal')
+scatter = ax.scatter([p.position[0] for p in points], [p.position[1] for p in points], alpha = 1, s = [p.mass / 1000 for p in points])
 ax.set_xlim(-2 * Size, Size * 2)
 ax.set_ylim(-2 * Size, Size * 2)
 
@@ -370,6 +446,7 @@ def update(frame):
     y_positions = [p.position[1] for p in points]
     
     # Update scatter plot
+    ax.set_title(f'Time: {TIME}')
     scatter.set_offsets(list(zip(x_positions, y_positions)))  
     scatter.set_facecolor(update_colors())
     for point in points:
@@ -400,14 +477,28 @@ def Eccentricities():
 
 #ECCENTRICITY
 plotE, plotT = Eccentricities()
-plt.title
-plt.scatter(plotT, plotE, alpha = 0.5)
-plt.ylim(0, 1.1)
 
+plotE = np.array(plotE)
+plotT = np.array(plotT)
+
+valid_indices = ~np.isnan(plotE)
+
+plotE = plotE[valid_indices]
+plotT = plotT[valid_indices]
+
+
+plt.figure(figsize=(12, 6))
+plt.ylim(0, 1.1)
+plt.grid(False, which='both', linestyle='--', color='gray', alpha=0.5)
 plt.title('Eccentricity vs Time')
 plt.xlabel('Time')
 plt.ylabel('Eccentricity')
+
+plt.scatter(plotT, plotE, alpha = 1, color="darkorange", s=10)
 plt.show()
+
+print(f"Average Eccentricity: {sum(plotE)/len(plotE)}")
+print(f"Total Orbits: {len(plotE)}")
 
 '''
 #COUNTS
